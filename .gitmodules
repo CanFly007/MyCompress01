@@ -1,0 +1,3 @@
+[submodule "external/astcenc"]
+	path = external/astcenc
+	url = git@github.com:ARM-software/astc-encoder.git
