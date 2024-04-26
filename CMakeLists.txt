@@ -23,4 +23,4 @@ target_link_libraries(MyExecutable astcenc-native-static)
 #这样，当您在 MyExecutable 中 #include 相关头文件时，编译器能够找到这些文件，而您无需在 MyExecutable 的 CMake 配置中显式添加 target_include_directories
 
 # 指定头文件搜索路径
-target_include_directories(MyExecutable PRIVATE external/astcenc/Source)
+# target_include_directories(MyExecutable PRIVATE external/astcenc/Source)
