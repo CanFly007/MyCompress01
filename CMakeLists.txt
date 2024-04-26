@@ -10,8 +10,13 @@ add_executable(MyExecutable main.cpp)
 # 添加依赖确保在构建MyExecutable之前构建astcenc-native-static
 add_dependencies(MyExecutable astcenc-native-static)
 
+add_dependencies(MyExecutable astcenc-native)
+
+
 # 链接 astcenc 库
 target_link_libraries(MyExecutable astcenc-native-static)
+
+target_link_libraries(MyExecutable astcenc-native)
 
 
 
