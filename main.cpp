@@ -10,6 +10,7 @@
 #include <thread>
 #include <vector>
 #include <astcenccli_internal.h>
+#include <astcenccli_toplevel.cpp>
 
 int CompressASTC(char** argv);
 
@@ -20,9 +21,9 @@ int main(int argc, char** argv)
 
 int CompressASTC(char** argv)
 {
-	static const unsigned int thread_count = 1;
-	static const unsigned int block_x = 6;
-	static const unsigned int block_y = 6;
+	static const unsigned int thread_count = 20;
+	static const unsigned int block_x = 4;
+	static const unsigned int block_y = 4;
 	static const unsigned int block_z = 1;
 	static const astcenc_profile profile = ASTCENC_PRF_LDR;
 	static const float quality = ASTCENC_PRE_MEDIUM;
@@ -57,13 +58,28 @@ int CompressASTC(char** argv)
 	size_t buffer_size = blocks_x * blocks_y * 16;
 	uint8_t* buffer = new uint8_t[buffer_size];
 
-	status = astcenc_compress_image(context, image_uncomp_in, &swizzle, buffer, buffer_size, 0);
-	if (status != ASTCENC_SUCCESS)
-	{
-		printf("ERROR: Codec compress failed: %s\n", astcenc_get_error_string(status));
-		return 1;
-	}
-	//stbi_write_png(argv[2], image_x, image_y, 4, image_data, 4 * image_x);
+
+
+	compression_workload work;
+	work.context = context;
+	work.image = image_uncomp_in;
+	work.swizzle = { ASTCENC_SWZ_R, ASTCENC_SWZ_G, ASTCENC_SWZ_B, ASTCENC_SWZ_A };
+	work.data_out = buffer;
+	work.data_len = buffer_size;
+	work.error = ASTCENC_SUCCESS;
+
+	launch_threads("Compression", thread_count, compression_workload_runner, &work);
+	astcenc_compress_reset(context);
+
+
+
+	//status = astcenc_compress_image(context, image_uncomp_in, &swizzle, buffer, buffer_size, 0);
+	//if (status != ASTCENC_SUCCESS)
+	//{
+	//	printf("ERROR: Codec compress failed: %s\n", astcenc_get_error_string(status));
+	//	return 1;
+	//}
+
 	astc_compressed_image image_comp{};
 	image_comp.block_x = config.block_x;
 	image_comp.block_y = config.block_y;
