@@ -1,4 +1,4 @@
-#include <stdio.h>
+﻿#include <stdio.h>
 
 #include "astcenc.h"
 
@@ -59,7 +59,7 @@ int CompressASTC(char** argv)
 	uint8_t* buffer = new uint8_t[buffer_size];
 
 
-
+	//多线程
 	compression_workload work;
 	work.context = context;
 	work.image = image_uncomp_in;
@@ -72,7 +72,7 @@ int CompressASTC(char** argv)
 	astcenc_compress_reset(context);
 
 
-
+	//单线程，暂时不删除，可能用来调试yFlip，压缩mip链而不是单张等astc问题
 	//status = astcenc_compress_image(context, image_uncomp_in, &swizzle, buffer, buffer_size, 0);
 	//if (status != ASTCENC_SUCCESS)
 	//{
