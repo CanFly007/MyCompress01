@@ -19,7 +19,17 @@ target_link_libraries(MyExecutable astcenc-native-static)
 target_link_libraries(MyExecutable astcenc-native)
 
 
-
+# ISPC 库的头文件路径
+target_include_directories(MyExecutable PRIVATE ${CMAKE_SOURCE_DIR}/external/ISPC/builds)
+# ISPC 库的导入库.lib文件路径
+target_link_directories(MyExecutable PRIVATE ${CMAKE_SOURCE_DIR}/external/ISPC/builds/windows)
+# 链接 ISPC 库
+target_link_libraries(MyExecutable ispc_texcomp)
+# 将 DLL 文件复制到输出目录（可选）
+add_custom_command(TARGET MyExecutable POST_BUILD
+    COMMAND ${CMAKE_COMMAND} -E copy_if_different
+    "${CMAKE_SOURCE_DIR}/external/ISPC/builds/windows/ispc_texcomp.dll"
+    $<TARGET_FILE_DIR:MyExecutable>)
 
 
 #如果 astcenc-native-static 的 CMake 配置中包含了像下面的代码：
