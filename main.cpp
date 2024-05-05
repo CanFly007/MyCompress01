@@ -132,11 +132,63 @@ void write_dds(const char* filename, int width, int height, const void* data, si
 
 int main(int argc, char** argv)
 {
-	//return CompressASTC(argv);
+	if (argc < 5) 
+	{
+		fprintf(stderr, "Usage: <format> <options> <input file> <output file>\n");
+		return 1;
+	}
 
-	//return CompressBC7(argv);
-	//return CompressBC3(argv);
-	return CompressBC1(argv);
+	const char* format = argv[1];
+	if (strcmp(format, "astc") == 0)
+	{
+		// Example: astc 6x6 input.png output.astc
+		const char* blockSize = argv[2];
+		const char* inputFile = argv[3];
+		const char* outputFile = argv[4];
+
+		if (strcmp(blockSize, "4x4") != 0 && strcmp(blockSize, "5x5") != 0 && strcmp(blockSize, "6x6") != 0) 
+		{
+			fprintf(stderr, "Invalid block size for ASTC. Use 4x4, 5x5, or 6x6.\n");
+			return 1;
+		}
+		if (strstr(outputFile, ".astc") == NULL) 
+		{
+			fprintf(stderr, "Output file must have a .astc extension.\n");
+			return 1;
+		}
+		return CompressASTC(argv + 2);
+	}
+	else if (strcmp(format, "bc") == 0)
+	{
+		// Example: bc 7 input.png output.dds
+		const char* version = argv[2];
+		const char* inputFile = argv[3];
+		const char* outputFile = argv[4];
+
+		if (strcmp(version, "1") != 0 && strcmp(version, "3") != 0 && strcmp(version, "7") != 0) 
+		{
+			fprintf(stderr, "Invalid BC version. Use 1, 3, or 7.\n");
+			return 1;
+		}
+		if (strstr(outputFile, ".dds") == NULL) 
+		{
+			fprintf(stderr, "Output file must have a .dds extension.\n");
+			return 1;
+		}
+
+		if (strcmp(version, "1") == 0)
+			return CompressBC1(argv + 2);
+		else if (strcmp(version, "3") == 0)
+			return CompressBC3(argv + 2);
+		else if (strcmp(version, "7") == 0)
+			return CompressBC7(argv + 2);
+	}
+	else 
+	{
+		fprintf(stderr, "Unsupported format. Use 'astc' or 'bc'.\n");
+		return 1;
+	}
+	return 0;
 }
 
 int CompressBC1(char** argv)
@@ -228,14 +280,17 @@ int CompressBC7(char** argv)
 int CompressASTC(char** argv)
 {
 	static const unsigned int thread_count = 20;
-	static const unsigned int block_x = 4;
-	static const unsigned int block_y = 4;
+	//static const unsigned int block_x = 4;
+	//static const unsigned int block_y = 4;
 	static const unsigned int block_z = 1;
 	static const astcenc_profile profile = ASTCENC_PRF_LDR;
 	static const float quality = ASTCENC_PRE_MEDIUM;
 	static const astcenc_swizzle swizzle{
 		ASTCENC_SWZ_R, ASTCENC_SWZ_G, ASTCENC_SWZ_B, ASTCENC_SWZ_A
 	};
+
+	unsigned int block_x, block_y;
+	sscanf(argv[0], "%ux%u", &block_x, &block_y); 
 
 	astcenc_config config;
 	config.block_x = block_x;
