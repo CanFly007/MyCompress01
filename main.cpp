@@ -13,11 +13,15 @@
 
 #include <ispc_texcomp.h>
 
+#define STB_IMAGE_RESIZE_IMPLEMENTATION 
+#include "ThirdParty/stb_image_resize.h"
+
 int CompressASTC(char** argv);
 int CompressBC7(char** argv);
 int CompressBC3(char** argv);
 int CompressBC1(char** argv);
 
+int CompressBC(char** argv);
 
 //BC7的Header
 #include <stdint.h>
@@ -130,6 +134,19 @@ void write_dds(const char* filename, int width, int height, const void* data, si
 }
 
 
+uint8_t* generate_mipmap(uint8_t* input, int input_width, int input_height, int channels, int* output_width, int* output_height) 
+{
+	*output_width = input_width / 2;
+	*output_height = input_height / 2;
+	if (*output_width == 0) *output_width = 1;
+	if (*output_height == 0) *output_height = 1;
+
+	uint8_t* output = (uint8_t*)malloc(*output_width * *output_height * channels);
+	stbir_resize_uint8(input, input_width, input_height, 0, output, *output_width, *output_height, 0, channels);
+	return output;
+}
+
+
 int main(int argc, char** argv)
 {
 	if (argc < 5) 
@@ -176,12 +193,13 @@ int main(int argc, char** argv)
 			return 1;
 		}
 
-		if (strcmp(version, "1") == 0)
-			return CompressBC1(argv + 2);
-		else if (strcmp(version, "3") == 0)
-			return CompressBC3(argv + 2);
-		else if (strcmp(version, "7") == 0)
-			return CompressBC7(argv + 2);
+		CompressBC(argv + 2);
+		//if (strcmp(version, "1") == 0)
+		//	return CompressBC1(argv + 2);
+		//else if (strcmp(version, "3") == 0)
+		//	return CompressBC3(argv + 2);
+		//else if (strcmp(version, "7") == 0)
+		//	return CompressBC7(argv + 2);
 	}
 	else 
 	{
@@ -189,6 +207,54 @@ int main(int argc, char** argv)
 		return 1;
 	}
 	return 0;
+}
+
+int CompressBC(char** argv)
+{
+	const char* version = argv[0];
+	int bcN = 0;
+	if (strcmp(version, "1") == 0)
+		bcN = 1;
+	else if (strcmp(version, "3") == 0)
+		bcN = 3;
+	else if (strcmp(version, "7") == 0)
+		bcN = 7;
+
+	int image_x, image_y, image_c;
+	uint8_t* image_data = (uint8_t*)stbi_load(argv[1], &image_x, &image_y, &image_c, 4);
+
+	rgba_surface surfaceInput;
+	surfaceInput.ptr = image_data;
+	surfaceInput.stride = image_x * 4;
+	surfaceInput.width = image_x;
+	surfaceInput.height = image_y;
+
+	// Calculate buffer size for output, considering each block compresses to 16 bytes
+	size_t num_blocks_wide = (image_x + 3) / 4;
+	size_t num_blocks_high = (image_y + 3) / 4;
+	size_t output_buffer_size;
+	if (bcN == 1)
+		output_buffer_size = num_blocks_wide * num_blocks_high * 8;
+	else
+		output_buffer_size = num_blocks_wide * num_blocks_high * 16;
+	uint8_t* output_buffer = (uint8_t*)malloc(output_buffer_size);
+
+	if (bcN == 1)
+		CompressBlocksBC1(&surfaceInput, output_buffer);
+	else if (bcN == 3)
+		CompressBlocksBC3(&surfaceInput, output_buffer);
+	else if (bcN == 7)
+	{
+		bc7_enc_settings encodingSettings;
+		GetProfile_basic(&encodingSettings);
+		CompressBlocksBC7(&surfaceInput, output_buffer, &encodingSettings);
+	}
+
+	write_dds(argv[2], image_x, image_y, output_buffer, output_buffer_size, bcN);
+
+	free(output_buffer);
+	stbi_image_free(image_data);
+	return 1;
 }
 
 int CompressBC1(char** argv)
