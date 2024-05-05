@@ -14,9 +14,9 @@
 #include <ispc_texcomp.h>
 
 int CompressASTC(char** argv);
-
-
-
+int CompressBC7(char** argv);
+int CompressBC3(char** argv);
+int CompressBC1(char** argv);
 
 
 //BC7的Header
@@ -78,7 +78,8 @@ typedef struct {
 } DDS_HEADER_DXT10;
 
 
-void write_dds(const char* filename, int width, int height, const void* data, size_t dataSize) {
+void write_dds(const char* filename, int width, int height, const void* data, size_t dataSize, int bcN) 
+{
 	FILE* file = fopen(filename, "wb");
 	if (!file) {
 		fprintf(stderr, "Failed to open output file\n");
@@ -98,18 +99,32 @@ void write_dds(const char* filename, int width, int height, const void* data, si
 	header.dwMipMapCount = 0;
 	header.ddpfPixelFormat.dwSize = 32;
 	header.ddpfPixelFormat.dwFlags = DDPF_FOURCC;
-	header.ddpfPixelFormat.dwFourCC = MAKEFOURCC('D', 'X', '1', '0');
+	if (bcN == 7)
+	{
+		header.ddpfPixelFormat.dwFourCC = MAKEFOURCC('D', 'X', '1', '0');
+	}
+	else if (bcN == 3)
+	{
+		header.ddpfPixelFormat.dwFourCC = MAKEFOURCC('D', 'X', 'T', '5');
+	}
+	else if (bcN == 1)
+	{
+		header.ddpfPixelFormat.dwFourCC = MAKEFOURCC('D', 'X', 'T', '1');
+	}
 	header.ddsCaps.dwCaps1 = DDSCAPS_TEXTURE;
 	fwrite(&header, sizeof(DDS_HEADER), 1, file);
 
-	DDS_HEADER_DXT10 dxt10Header = {
-		DXGI_FORMAT_BC7_UNORM,
-		D3D10_RESOURCE_DIMENSION_TEXTURE2D,
-		0,
-		1,
-		0
-	};
-	fwrite(&dxt10Header, sizeof(DDS_HEADER_DXT10), 1, file);
+	if (bcN == 7) {
+		DDS_HEADER_DXT10 dxt10Header = {
+			DXGI_FORMAT_BC7_UNORM,
+			D3D10_RESOURCE_DIMENSION_TEXTURE2D,
+			0,
+			1,
+			0
+		};
+		fwrite(&dxt10Header, sizeof(DDS_HEADER_DXT10), 1, file);
+	}
+
 	fwrite(data, 1, dataSize, file);
 	fclose(file);
 }
@@ -119,6 +134,68 @@ int main(int argc, char** argv)
 {
 	//return CompressASTC(argv);
 
+	//return CompressBC7(argv);
+	//return CompressBC3(argv);
+	return CompressBC1(argv);
+}
+
+int CompressBC1(char** argv)
+{
+	int image_x, image_y, image_c;
+	uint8_t* image_data = (uint8_t*)stbi_load(argv[1], &image_x, &image_y, &image_c, 4);
+
+	rgba_surface surfaceInput;
+	surfaceInput.ptr = image_data;
+	surfaceInput.stride = image_x * 4;
+	surfaceInput.width = image_x;
+	surfaceInput.height = image_y;
+
+	// Calculate buffer size for output, considering each block compresses to 16 bytes
+	size_t num_blocks_wide = (image_x + 3) / 4;
+	size_t num_blocks_high = (image_y + 3) / 4;
+	//size_t output_buffer_size = num_blocks_wide * num_blocks_high * 16;
+	size_t output_buffer_size = num_blocks_wide * num_blocks_high * 8;
+	uint8_t* output_buffer = (uint8_t*)malloc(output_buffer_size);
+
+	//为什么单线程也能这么快？内部是多线程？
+	CompressBlocksBC1(&surfaceInput, output_buffer);
+
+	write_dds(argv[2], image_x, image_y, output_buffer, output_buffer_size, 1);
+
+	free(output_buffer);
+	stbi_image_free(image_data);
+	return 1;
+}
+
+int CompressBC3(char** argv)
+{
+	int image_x, image_y, image_c;
+	uint8_t* image_data = (uint8_t*)stbi_load(argv[1], &image_x, &image_y, &image_c, 4);
+
+	rgba_surface surfaceInput;
+	surfaceInput.ptr = image_data;
+	surfaceInput.stride = image_x * 4;
+	surfaceInput.width = image_x;
+	surfaceInput.height = image_y;
+
+	// Calculate buffer size for output, considering each block compresses to 16 bytes
+	size_t num_blocks_wide = (image_x + 3) / 4;
+	size_t num_blocks_high = (image_y + 3) / 4;
+	size_t output_buffer_size = num_blocks_wide * num_blocks_high * 16;
+	uint8_t* output_buffer = (uint8_t*)malloc(output_buffer_size);
+
+	//为什么单线程也能这么快？内部是多线程？
+	CompressBlocksBC3(&surfaceInput, output_buffer);
+
+	write_dds(argv[2], image_x, image_y, output_buffer, output_buffer_size, 3);
+
+	free(output_buffer);
+	stbi_image_free(image_data);
+	return 1;
+}
+
+int CompressBC7(char** argv)
+{
 	int image_x, image_y, image_c;
 	uint8_t* image_data = (uint8_t*)stbi_load(argv[1], &image_x, &image_y, &image_c, 4);
 
@@ -141,7 +218,7 @@ int main(int argc, char** argv)
 	//为什么单线程也能这么快？内部是多线程？
 	CompressBlocksBC7(&surfaceInput, output_buffer, &encodingSettings);
 
-	write_dds(argv[2], image_x, image_y, output_buffer, output_buffer_size);
+	write_dds(argv[2], image_x, image_y, output_buffer, output_buffer_size, 7);
 
 	free(output_buffer);
 	stbi_image_free(image_data);
