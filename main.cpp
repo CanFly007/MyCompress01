@@ -21,7 +21,9 @@ int CompressBC7(char** argv);
 int CompressBC3(char** argv);
 int CompressBC1(char** argv);
 
-int CompressBC(char** argv);
+int CompressBC(int argc, char** argv);
+
+void write_dds(const char* filename, int width, int height, const void* data, size_t dataSize, int bcN, int mipCount = 0, bool isFirstMipLevel = true);
 
 //BC7的Header
 #include <stdint.h>
@@ -44,6 +46,11 @@ int CompressBC(char** argv);
 
 #define DXGI_FORMAT_BC7_UNORM 98
 #define D3D10_RESOURCE_DIMENSION_TEXTURE2D 3
+
+#define DDSCAPS_COMPLEX 0x8
+#define DDSCAPS_MIPMAP 0x400000
+#define DDSD_MIPMAPCOUNT 0x20000
+
 
 typedef struct {
 	uint32_t       dwSize;
@@ -82,51 +89,72 @@ typedef struct {
 } DDS_HEADER_DXT10;
 
 
-void write_dds(const char* filename, int width, int height, const void* data, size_t dataSize, int bcN) 
+void write_dds(const char* filename, int width, int height, const void* data, size_t dataSize, int bcN, int mipCount, bool isFirstMipLevel) 
 {
-	FILE* file = fopen(filename, "wb");
-	if (!file) {
-		fprintf(stderr, "Failed to open output file\n");
-		return;
-	}
-
-	uint32_t ddsMagic = DDS_MAGIC;
-	fwrite(&ddsMagic, sizeof(uint32_t), 1, file);
-
-	DDS_HEADER header = { 0 };
-	header.dwSize = 124;
-	header.dwFlags = DDSD_CAPS | DDSD_HEIGHT | DDSD_WIDTH | DDSD_PIXELFORMAT | DDSD_LINEARSIZE;
-	header.dwHeight = height;
-	header.dwWidth = width;
-	header.dwPitchOrLinearSize = dataSize;
-	header.dwDepth = 0;
-	header.dwMipMapCount = 0;
-	header.ddpfPixelFormat.dwSize = 32;
-	header.ddpfPixelFormat.dwFlags = DDPF_FOURCC;
-	if (bcN == 7)
+	FILE* file;
+	if (mipCount == 1 || isFirstMipLevel)
 	{
-		header.ddpfPixelFormat.dwFourCC = MAKEFOURCC('D', 'X', '1', '0');
-	}
-	else if (bcN == 3)
-	{
-		header.ddpfPixelFormat.dwFourCC = MAKEFOURCC('D', 'X', 'T', '5');
-	}
-	else if (bcN == 1)
-	{
-		header.ddpfPixelFormat.dwFourCC = MAKEFOURCC('D', 'X', 'T', '1');
-	}
-	header.ddsCaps.dwCaps1 = DDSCAPS_TEXTURE;
-	fwrite(&header, sizeof(DDS_HEADER), 1, file);
+		file = fopen(filename, "wb");
+		if (!file) 
+		{
+			fprintf(stderr, "Failed to open output file\n");
+			return;
+		}
 
-	if (bcN == 7) {
-		DDS_HEADER_DXT10 dxt10Header = {
-			DXGI_FORMAT_BC7_UNORM,
-			D3D10_RESOURCE_DIMENSION_TEXTURE2D,
-			0,
-			1,
-			0
-		};
-		fwrite(&dxt10Header, sizeof(DDS_HEADER_DXT10), 1, file);
+		uint32_t ddsMagic = DDS_MAGIC;
+		fwrite(&ddsMagic, sizeof(uint32_t), 1, file);
+
+		DDS_HEADER header = { 0 };
+		header.dwSize = 124;
+		header.dwFlags = DDSD_CAPS | DDSD_HEIGHT | DDSD_WIDTH | DDSD_PIXELFORMAT | DDSD_LINEARSIZE;
+		header.dwHeight = height;
+		header.dwWidth = width;
+		header.dwPitchOrLinearSize = dataSize;
+		header.dwDepth = 0;
+		header.dwMipMapCount = 0;
+		header.ddpfPixelFormat.dwSize = 32;
+		header.ddpfPixelFormat.dwFlags = DDPF_FOURCC;
+		if (bcN == 7) 
+		{
+			header.ddpfPixelFormat.dwFourCC = MAKEFOURCC('D', 'X', '1', '0');
+		}
+		else if (bcN == 3) 
+		{
+			header.ddpfPixelFormat.dwFourCC = MAKEFOURCC('D', 'X', 'T', '5');
+		}
+		else if (bcN == 1) 
+		{
+			header.ddpfPixelFormat.dwFourCC = MAKEFOURCC('D', 'X', 'T', '1');
+		}
+		header.ddsCaps.dwCaps1 = DDSCAPS_TEXTURE;
+		if (mipCount > 1)
+		{
+			header.dwFlags |= DDSD_MIPMAPCOUNT;
+			header.dwMipMapCount = mipCount;
+			header.ddsCaps.dwCaps1 |= DDSCAPS_COMPLEX | DDSCAPS_MIPMAP;
+		}		
+
+		fwrite(&header, sizeof(DDS_HEADER), 1, file);
+
+		if (bcN == 7) {
+			DDS_HEADER_DXT10 dxt10Header = {
+				DXGI_FORMAT_BC7_UNORM,
+				D3D10_RESOURCE_DIMENSION_TEXTURE2D,
+				0,
+				1,
+				0
+			};
+			fwrite(&dxt10Header, sizeof(DDS_HEADER_DXT10), 1, file);
+		}
+	}
+	else 
+	{
+		file = fopen(filename, "ab");
+		if (!file) 
+		{
+			fprintf(stderr, "Failed to open output file for appending\n");
+			return;
+		}
 	}
 
 	fwrite(data, 1, dataSize, file);
@@ -193,7 +221,7 @@ int main(int argc, char** argv)
 			return 1;
 		}
 
-		CompressBC(argv + 2);
+		CompressBC(argc - 2, argv + 2);
 		//if (strcmp(version, "1") == 0)
 		//	return CompressBC1(argv + 2);
 		//else if (strcmp(version, "3") == 0)
@@ -209,7 +237,12 @@ int main(int argc, char** argv)
 	return 0;
 }
 
-int CompressBC(char** argv)
+#define MAX_MIPMAP_LEVELS 20
+int max(int a, int b) {
+	return (a > b) ? a : b;
+}
+
+int CompressBC(int argc, char** argv)
 {
 	const char* version = argv[0];
 	int bcN = 0;
@@ -220,6 +253,13 @@ int CompressBC(char** argv)
 	else if (strcmp(version, "7") == 0)
 		bcN = 7;
 
+	bool generateMipmaps = false;
+	for (int i = 3; i < argc; i++)
+	{
+		if (strcmp(argv[i], "-mipmap") == 0)
+			generateMipmaps = true;
+	}
+
 	int image_x, image_y, image_c;
 	uint8_t* image_data = (uint8_t*)stbi_load(argv[1], &image_x, &image_y, &image_c, 4);
 
@@ -229,30 +269,61 @@ int CompressBC(char** argv)
 	surfaceInput.width = image_x;
 	surfaceInput.height = image_y;
 
-	// Calculate buffer size for output, considering each block compresses to 16 bytes
-	size_t num_blocks_wide = (image_x + 3) / 4;
-	size_t num_blocks_high = (image_y + 3) / 4;
-	size_t output_buffer_size;
-	if (bcN == 1)
-		output_buffer_size = num_blocks_wide * num_blocks_high * 8;
-	else
-		output_buffer_size = num_blocks_wide * num_blocks_high * 16;
-	uint8_t* output_buffer = (uint8_t*)malloc(output_buffer_size);
+	rgba_surface mipmaps[MAX_MIPMAP_LEVELS];
+	mipmaps[0] = surfaceInput;
+	int num_levels = 1;
 
-	if (bcN == 1)
-		CompressBlocksBC1(&surfaceInput, output_buffer);
-	else if (bcN == 3)
-		CompressBlocksBC3(&surfaceInput, output_buffer);
-	else if (bcN == 7)
+	if (generateMipmaps)
 	{
-		bc7_enc_settings encodingSettings;
-		GetProfile_basic(&encodingSettings);
-		CompressBlocksBC7(&surfaceInput, output_buffer, &encodingSettings);
+		//int channels = format == 1 ? 3 : 4;
+		int channels = 4;
+		while (mipmaps[num_levels - 1].width > 1 || mipmaps[num_levels - 1].height > 1)
+		{
+			int new_width = max(1, mipmaps[num_levels - 1].width / 2);
+			int new_height = max(1, mipmaps[num_levels - 1].height / 2);
+			mipmaps[num_levels].ptr = generate_mipmap(mipmaps[num_levels - 1].ptr, mipmaps[num_levels - 1].width, mipmaps[num_levels - 1].height, channels, &new_width, &new_height);
+			mipmaps[num_levels].width = new_width;
+			mipmaps[num_levels].height = new_height;
+			mipmaps[num_levels].stride = new_width * 4;
+			num_levels++;
+			if (new_width == 1 && new_height == 1)
+				break;
+		}
 	}
 
-	write_dds(argv[2], image_x, image_y, output_buffer, output_buffer_size, bcN);
+	for (int i = 0; i < num_levels; i++)
+	{
+		size_t num_blocks_wide = (mipmaps[i].width + 3) / 4;
+		size_t num_blocks_high = (mipmaps[i].height + 3) / 4;
+		size_t output_buffer_size;
+		if (bcN == 1)
+			output_buffer_size = num_blocks_wide * num_blocks_high * 8;
+		else
+			output_buffer_size = num_blocks_wide * num_blocks_high * 16;
+		uint8_t* output_buffer = (uint8_t*)malloc(output_buffer_size);
 
-	free(output_buffer);
+		switch (bcN)
+		{
+		case 1:
+			CompressBlocksBC1(&mipmaps[i], output_buffer);
+			break;
+		case 3:
+			CompressBlocksBC3(&mipmaps[i], output_buffer);
+			break;
+		case 7:
+			bc7_enc_settings encodingSettings;
+			GetProfile_basic(&encodingSettings);
+			CompressBlocksBC7(&mipmaps[i], output_buffer, &encodingSettings);
+			break;
+		}
+
+		bool isFirstMipLevel = i == 0;
+		write_dds(argv[2], mipmaps[i].width, mipmaps[i].height, output_buffer, output_buffer_size, bcN, num_levels, isFirstMipLevel);
+
+		free(output_buffer);
+		if (i != 0) 
+			free(mipmaps[i].ptr);
+	}
 	stbi_image_free(image_data);
 	return 1;
 }
